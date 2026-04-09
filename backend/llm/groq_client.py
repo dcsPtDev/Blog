@@ -36,3 +36,6 @@ class GroqClient:
             return data.get("text", "").strip()
         except Exception as e:
             raise RuntimeError(f"Erro na requisição à API Groq: {e}")
+
+# instancia global
+client = GroqClient()

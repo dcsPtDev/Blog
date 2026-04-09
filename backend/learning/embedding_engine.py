@@ -1,10 +1,19 @@
 # backend/learning/embedding_engine.py
+
+
+import streamlit as st
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
 # Modelo leve para CPU/GPU
 MODEL_NAME = "all-MiniLM-L6-v2"
-model = SentenceTransformer(MODEL_NAME)
+#model = SentenceTransformer(MODEL_NAME)
+
+@st.cache_resource
+def load_model():
+    return SentenceTransformer(MODEL_NAME)
+
+model = load_model()
 
 def generate_embedding(text: str) -> np.ndarray:
     """

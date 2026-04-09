@@ -1,30 +1,47 @@
-# backend/llm/groq_llm.py
-from backend.llm.groq_client import GroqClient
 
-client = GroqClient()
+# backend/llm/groq_llm.py
+from backend.llm.groq_client import client
+import json
 
 def analyze_groq(content, content_type: str):
     """
     Envia conteúdo ao Groq.
-    Retorna (resultado, success)
+    Retorna (resultado_em_JSON, success)
     """
+
     prompt = f"""
-Você é um analista de cybersecurity.
-Analise o seguinte artefacto do tipo: {content_type}
+        Você é um analista de cibersegurança.
 
-Conteúdo:
-{content}
+        Analise o seguinte conteúdo ({content_type}) e responda EXCLUSIVAMENTE em JSON válido.
 
-Forneça uma análise clara, objetiva, focada em segurança,
-identifique riscos, vulnerabilidades e boas práticas.
+        Formato obrigatório:
+        {{
+        "signals": ["..."],
+        "risks": ["..."],
+        "recommendations": ["..."],
+        "summary": "resumo curto e objetivo"
+        }}
 
-Responda de forma concisa, sem rodeios, e destaque pontos críticos.
+        Regras:
+        - Seja técnico e direto
+        - Identifique sinais concretos
+        - Liste riscos reais
+        - Sugira recomendações práticas
+        - NÃO escreva texto fora do JSON
+
+        Conteúdo:
+        {content}
     """
 
     try:
         result = client.query(prompt)
-        if result:
-            return result, True
-        return "Groq retornou resposta vazia.", False
+        parsed = json.loads(result)
+        return parsed, True
+
     except Exception as e:
-        return f"Erro ao chamar Groq: {e}", False
+        return {
+            "signals": ["Erro na análise LLM"],
+            "risks": [],
+            "recommendations": [],
+            "summary": str(e)
+        }, False

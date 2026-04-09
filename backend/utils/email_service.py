@@ -21,18 +21,18 @@ def send_activation_email(email_to: str, token: str) -> bool:
     msg = EmailMessage()
     msg.set_content(
         f"""
-Olá,
+            Olá,
 
-Sua conta no BlogLLM foi criada com sucesso.
+            Sua conta no BlogLLM foi criada com sucesso.
 
-Para ativar sua conta, utilize o token abaixo:
+            Para ativar sua conta, utilize o token abaixo:
 
-{token}
+            {token}
 
-Depois do login, insira este token na tela de ativação.
+            Depois do login, insira este token na tela de ativação.
 
-— BlogLLM SOC Platform
-"""
+            — BlogLLM SOC Platform
+            """
     )
     msg["Subject"] = "Ativação de Conta – BlogLLM"
     msg["From"] = FROM_EMAIL
