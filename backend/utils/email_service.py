@@ -1,47 +1,51 @@
 # backend/utils/email_service.py
-
+import os
 import smtplib
 from email.message import EmailMessage
+
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 
 # ==============================
 # CONFIGURAÇÃO DE EMAIL
 # ==============================
-SMTP_HOST = "localhost"       # Servidor SMTP local (ex: MailHog ou similar)
-SMTP_PORT = 1025              # Porta do servidor SMTP local
-FROM_EMAIL = "admin@blogllm.local"
+SMTP_HOST = "sandbox.smtp.mailtrap.io"
+SMTP_PORT = 2525
+USER = os.getenv("EMAIL_USER")
+PASS = os.getenv("EMAIL_PASS") 
 
-# ==============================
-# FUNÇÃO DE ENVIO DE EMAIL DE ATIVAÇÃO
-# ==============================
+
 def send_activation_email(email_to: str, token: str) -> bool:
-    """
-    Envia email de ativação de conta com token.
-    Retorna True se enviado com sucesso, False caso contrário.
-    """
     msg = EmailMessage()
-    msg.set_content(
-        f"""
-            Olá,
 
-            Sua conta no BlogLLM foi criada com sucesso.
+    msg.set_content(f"""
+Olá,
 
-            Para ativar sua conta, utilize o token abaixo:
+Sua conta no BlogLLM foi criada com sucesso.
 
-            {token}
+Para ativar sua conta, utilize o token abaixo:
 
-            Depois do login, insira este token na tela de ativação.
+{token}
 
-            — BlogLLM SOC Platform
-            """
-    )
+— BlogLLM SOC Platform
+""")
+
     msg["Subject"] = "Ativação de Conta – BlogLLM"
-    msg["From"] = FROM_EMAIL
+    msg["From"] = "no-reply@blogllm.local"
     msg["To"] = email_to
 
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
+            smtp.starttls()              # 🔥 obrigatório
+            smtp.login(USER, PASS)       # 🔥 obrigatório
             smtp.send_message(msg)
+
+        print("Email enviado com sucesso")
         return True
+
     except Exception as e:
         print("Erro ao enviar email:", e)
         return False

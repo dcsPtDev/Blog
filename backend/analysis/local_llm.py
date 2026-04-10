@@ -1,52 +1,75 @@
-# backend/analysis/local_llm.py
+# # backend/analysis/local_llm.py
+
+import streamlit as st
 import torch
-from transformers import LlamaTokenizer, LlamaForCausalLM, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-# -----------------------------
-# CONFIGURAÇÃO DO MODELO LOCAL
-# -----------------------------
-# MODEL_NAME = "TheBloke/LLaMA-3B-GGML"  # Modelo quantizado GGML
-MODEL_NAME = "google/flan-t5-small"  # Alternativa leve para CPU/testes
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL_NAME = "google/flan-t5-small"
 
-# -----------------------------
-# TOKENIZER
-# -----------------------------
-try:
-    if "llama" in MODEL_NAME.lower():
-        tokenizer = LlamaTokenizer.from_pretrained(MODEL_NAME)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-except Exception as e:
-    raise RuntimeError(f"Erro ao carregar tokenizer: {e}")
 
-# -----------------------------
-# MODELO
-# -----------------------------
-try:
-    if "llama" in MODEL_NAME.lower():
-        model = LlamaForCausalLM.from_pretrained(
-            MODEL_NAME,
-            device_map="auto" if device == "cuda" else None,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
+@st.cache_resource
+def load_model():
+    """Carrega o modelo uma única vez."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32
+    ).to(device)
+    
+    return tokenizer, model
+
+
+def build_prompt(report_dict: dict) -> str:
+    # [mantém o mesmo código que já tens]
+    artifact_type = report_dict.get("artifact_type", "unknown")
+    risk_level = report_dict.get("risk_level", "low")
+    findings = report_dict.get("findings", [])
+    raw_evidence = report_dict.get("raw_evidence", {})
+
+    findings_text = []
+    for f in findings:
+        findings_text.append(
+            f"{f.get('category', 'unknown')} | {f.get('severity', 'medium')} | {f.get('description', '')} | {f.get('evidence', '')}"
         )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-except Exception as e:
-    raise RuntimeError(f"Erro ao carregar modelo: {e}")
 
-# -----------------------------
-# FUNÇÃO DE ANÁLISE LOCAL
-# -----------------------------
-def analyze_local_llm(prompt: str, max_tokens: int = 512) -> str:
-    """
-    Realiza inferência local com o modelo carregado.
-    - prompt: texto de entrada
-    - max_tokens: número máximo de tokens gerados
-    Retorna texto gerado pelo modelo.
-    """
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
-    outputs = model.generate(**inputs, max_new_tokens=max_tokens)
+    prompt = f"""
+            You are a cybersecurity analyst.
+            Analyze the forensic report and return:
+            1. A short summary
+            2. Main risks
+            3. Practical recommendations #MOST IMPORTANT#
+            4. User-friendly explanation
+
+            Artifact type: {artifact_type}
+            Risk level: {risk_level}
+
+            Findings:
+            {chr(10).join('- ' + x for x in findings_text)}
+
+            Raw evidence:
+            {raw_evidence}
+
+            Write concise, clear and practical output.
+            
+
+            """
+    return prompt.strip()
+
+
+def analyze_local_llm(report_dict: dict, max_tokens: int = 256) -> str:
+    tokenizer, model = load_model()  # ← Carrega só uma vez!
+    
+    prompt = build_prompt(report_dict)
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True).to(model.device)
+    
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=max_tokens,
+        do_sample=False
+    )
+    
     result = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return result

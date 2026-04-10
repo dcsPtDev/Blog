@@ -1,24 +1,16 @@
+
+from datetime import datetime
+import uuid
+import numpy as np
+
 from backend.learning.memory_store import load_memory, save_memory
 from backend.learning.embedding_engine import generate_embedding, cosine_similarity
 from backend.learning.correlation_engine import analyze_correlation
-from backend.llm.offline_mode import analyze_offline
+from backend.analysis.engine import run_forensic_analysis
+from backend.analysis.local_llm import analyze_local_llm
 from backend.llm.groq_llm import analyze_groq
 
-from datetime import datetime
-import numpy as np
-import uuid
-import json
 
-# def safe_parse_json(text):
-#     try:
-#         return json.loads(text)
-#     except:
-#         return {
-#             "signals": [text[:100]],
-#             "risks": [],
-#             "recommendations": [],
-#             "summary": text[:200]
-#         }
 def safe_parse_json(obj):
     import json
     if isinstance(obj, dict):
@@ -32,6 +24,16 @@ def safe_parse_json(obj):
             "recommendations": [],
             "summary": str(obj)[:200]
         }
+
+
+def format_finding_summary(report):
+    lines = [f"Artefacto: {report.artifact_type}", f"Risco: {report.risk_level()}"]
+    for f in report.findings:
+        lines.append(
+            f"- [{f.severity}] {f.category}: {f.description} | Evidência: {f.evidence} | Confiança: {f.confidence}"
+        )
+    return "\n".join(lines)
+
 
 def format_analysis_text(analysis):
     text = "Análise de Segurança\n\n"
@@ -47,7 +49,10 @@ def format_analysis_text(analysis):
         text += "\nRecomendações\n"
         for rec in analysis["recommendations"]:
             text += f"- {rec}\n"
+    if analysis.get("summary"):
+        text += f"\nResumo\n- {analysis['summary']}\n"
     return text
+
 
 def find_similar_logs(memory, new_entry, threshold=0.75):
     similar_logs = []
@@ -65,6 +70,7 @@ def find_similar_logs(memory, new_entry, threshold=0.75):
                 })
     return similar_logs
 
+
 def calculate_risk(analysis):
     alerts = analysis.get("risks", [])
     if not alerts:
@@ -77,70 +83,72 @@ def calculate_risk(analysis):
             score += 0.1
     return round(min(score, 1.0), 2)
 
+
 def analyze(content, content_type="text", mode="offline-first", ip=None):
     memory = load_memory()
     if "logs" not in memory:
         memory["logs"] = []
 
-    # 1️⃣ Offline
-    analysis, success = analyze_offline(content, content_type, memory=memory)
-    engine_used = "offline"
+    forensic_report = run_forensic_analysis(content, content_type)
+    forensic_dict = forensic_report.to_dict()
+    forensic_summary = format_finding_summary(forensic_report)
 
-    # # 2️⃣ Online fallback se offline não encontrar sinais
-    # if not success and mode != "offline-only":
-    #     groq_result, success_online = analyze_groq(content, content_type)
-    #     online_analysis = safe_parse_json(groq_result)
-    #     if success_online:
-    #         analysis = online_analysis
-    #         engine_used = "groq"
-    # Online fallback
-    if not success and mode != "offline-only":
-        groq_result, success_online = analyze_groq(content, content_type)
+    engine_used = "forensic-only"
+    analysis = {
+        "signals": [],
+        "risks": [],
+        "recommendations": [],
+        "summary": forensic_summary
+    }
 
-        if isinstance(groq_result, str):
-            #online_analysis = safe_parse_json(groq_result)
-            analysis = safe_parse_json(groq_result)
-        else:
-            #online_analysis = groq_result
-            analysis = groq_result
-        if success_online:
-            #analysis = online_analysis
-            engine_used = "groq"
+    if mode in ["offline-first", "offline-only"]:
+        llm_output = analyze_local_llm(forensic_dict)
+        analysis = safe_parse_json(llm_output)
+        engine_used = "local"
 
-    # 3️⃣ Embedding
-    embedding = generate_embedding(str(content))
+    if mode != "offline-only":
+        if not analysis.get("risks") and not analysis.get("recommendations"):
+            groq_result, success_online = analyze_groq(forensic_summary, content_type)
+            online_analysis = safe_parse_json(groq_result)
+            if success_online and online_analysis:
+                analysis = online_analysis
+                engine_used = "groq"
 
-    # 4️⃣ Memória
+    if not analysis.get("summary"):
+        analysis["summary"] = forensic_summary[:300]
+
+    embedding = generate_embedding(forensic_summary)
+
     timestamp = datetime.utcnow().isoformat()
     memory_entry = {
         "id": str(uuid.uuid4()),
         "timestamp": timestamp,
         "type": content_type,
         "content": str(content)[:1000],
+        "forensic_report": forensic_dict,
         "analysis": analysis,
         "result": format_analysis_text(analysis),
         "summary": analysis.get("summary", ""),
         "engine": engine_used,
         "ip": ip,
         "embedding": embedding.tolist(),
-        "findings": analysis.get("risks", [])
+        "findings": analysis.get("risks", []),
+        "risk_score": calculate_risk(analysis)
     }
 
-    # 5️⃣ Correlation
-    alerts = analyze_correlation(memory, memory_entry)
+    alerts = analyze_correlation(memory, {
+        "content": forensic_summary,
+        "ip": ip,
+        "result": memory_entry["result"]
+    })
     memory_entry["alerts"] = alerts
 
-    # 6️⃣ Similaridade
     similar_logs = find_similar_logs(memory, memory_entry)
     if similar_logs:
         alerts.append(f"{len(similar_logs)} logs similares encontrados")
         memory_entry["similar_logs"] = similar_logs
 
-    # 7️⃣ Risco
-    memory_entry["risk_score"] = calculate_risk(analysis)
-
-    # 8️⃣ Salvar memória
     memory["logs"].append(memory_entry)
     save_memory(memory)
 
-    return memory_entry["result"], engine_used, alerts
+    return memory_entry["result"], engine_used, alerts, forensic_dict

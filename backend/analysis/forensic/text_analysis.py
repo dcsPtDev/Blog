@@ -1,4 +1,6 @@
-# backend/analysis/forensic/text_analysis.py
+# # backend/analysis/forensic/text_analysis.py
+
+
 from backend.analysis.models import Finding, AnalysisReport
 from backend.analysis.detectors.ip_analysis import detect_ips
 from backend.analysis.detectors.auth_analysis import detect_auth_failures
@@ -6,18 +8,11 @@ from backend.analysis.detectors.encoding_analysis import entropy, detect_base64
 
 
 def analyze_text_forensic(text: str) -> AnalysisReport:
-    """
-    Realiza análise forense de logs de texto.
-    
-    Detecta:
-      - IPs
-      - Falhas de autenticação
-      - Conteúdo de alta entropia (possível ofuscação)
-      - Conteúdo codificado em Base64
-    """
-    report = AnalysisReport(artifact_type="text_log")
+    report = AnalysisReport(
+        artifact_type="text_log",
+        raw_evidence={"text_sample": text[:1000]}
+    )
 
-    # ---------- Detecta IPs ----------
     ips = detect_ips(text)
     if ips:
         report.findings.append(
@@ -29,8 +24,8 @@ def analyze_text_forensic(text: str) -> AnalysisReport:
                 confidence=0.6
             )
         )
+        report.raw_evidence["ips"] = ips
 
-    # ---------- Detecta falhas de autenticação ----------
     if detect_auth_failures(text):
         report.findings.append(
             Finding(
@@ -42,8 +37,8 @@ def analyze_text_forensic(text: str) -> AnalysisReport:
             )
         )
 
-    # ---------- Detecta alta entropia ----------
     ent = entropy(text)
+    report.raw_evidence["entropy"] = round(ent, 2)
     if ent > 4.5:
         report.findings.append(
             Finding(
@@ -55,7 +50,6 @@ def analyze_text_forensic(text: str) -> AnalysisReport:
             )
         )
 
-    # ---------- Detecta Base64 ----------
     if detect_base64(text):
         report.findings.append(
             Finding(
@@ -67,7 +61,6 @@ def analyze_text_forensic(text: str) -> AnalysisReport:
             )
         )
 
-    # ---------- Fallback ----------
     if not report.findings:
         report.findings.append(
             Finding(
@@ -80,3 +73,4 @@ def analyze_text_forensic(text: str) -> AnalysisReport:
         )
 
     return report
+

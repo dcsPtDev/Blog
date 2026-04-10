@@ -1,24 +1,25 @@
-# backend/analysis/engine.py
 from backend.analysis.forensic.text_analysis import analyze_text_forensic
 from backend.analysis.forensic.csv_analysis import analyze_csv_forensic
 from backend.analysis.forensic.image_analysis import analyze_image_forensic
 from backend.analysis.models import AnalysisReport
 
+
 def run_forensic_analysis(content, content_type: str) -> AnalysisReport:
-    """
-    Roteia a análise de conteúdo para o analisador adequado.
-    
-    content_type: "text", "csv", "image"
-    """
     if content_type == "text":
-        return analyze_text_forensic(str(content))
+        report = analyze_text_forensic(str(content))
+        return report
 
     if content_type == "csv":
-        return analyze_csv_forensic(str(content))
+        report = analyze_csv_forensic(str(content))
+        return report
 
     if content_type == "image":
-        # Para imagens, content deve ser um objeto tipo BytesIO ou arquivo binário
-        return analyze_image_forensic(content)
+        import io
+        image_bytes = io.BytesIO(content)
+        return analyze_image_forensic(image_bytes)
 
-    # Se não reconhecido
-    return AnalysisReport(artifact_type="unknown")
+    return AnalysisReport(
+        artifact_type="unknown",
+        findings=[],
+        raw_evidence={"note": "content_type não reconhecido"}
+    )
